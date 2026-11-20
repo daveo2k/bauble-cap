@@ -146,10 +146,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 
         <fieldset id="grp-micro" hidden>
           <legend>Micro-light spindle</legend>
-          <p class="hint">Feed the free end of the wire down through the cap and the hollow spindle. Out of the bottom, wind it back up the groove and push the end into a clip slot under the disc. Set the disc on the end of the bauble collar and snap the cap on; the cap clamps the disc in place.</p>
-          <div class="row"><label for="spinLen">Spindle length</label><div class="field"><input id="spinLen" type="number" step="1" min="10" value="70"><span>mm</span></div></div>
+          <p class="hint">Feed the free end of the wire down through the cap and the hollow spindle. Out of the bottom, wind it back up the groove and press the end into one of the two clip slots where the spiral finishes. Set the disc on the end of the bauble collar and snap the cap on; the cap clamps the disc in place.</p>
+          <div class="row"><label for="spinLen">Spindle length</label><div class="field"><input id="spinLen" type="number" step="1" min="25" value="85"><span>mm</span></div></div>
           <div class="row"><label for="spinD">Spindle diameter</label><div class="field"><input id="spinD" type="number" step="0.5" min="6" value="12"><span>mm</span></div></div>
           <div class="row"><label for="spinBore">Hollow centre diameter</label><div class="field"><input id="spinBore" type="number" step="0.5" min="1.5" value="4"><span>mm</span></div></div>
+          <div class="row"><label for="bareTop">Bare stem under the disc</label><div class="field"><input id="bareTop" type="number" step="1" min="8" value="18"><span>mm</span></div></div>
+          <p class="hint">The top of the spindle sits inside the bauble's cylinder, where lights would be hidden. The spiral starts below it. Make this about the cylinder height plus 3 mm. Two clip slots, one each side, hold the end of the lights where the spiral finishes.</p>
           <label class="check"><input id="groove" type="checkbox" checked> Spiral groove for the wire</label>
           <label class="check"><input id="autoPitch" type="checkbox" checked> Space the spiral to fit my lights</label>
           <p class="hint">The plain lead from the battery box runs down the hollow centre. The lit part, from the first LED to the last, winds up the outside, spread evenly from the bottom of the spindle to the top.</p>
@@ -235,7 +237,7 @@ let wasm = null;
 let current = null;
 
 // ---------- settings ----------
-const NUM_IDS = ['wireHole','wireSlot','bulbD','spinLen','spinD','spinBore','pitch','grooveDepth','wireClip','discT','microHole','microSlot','litLen','ledSpacing',
+const NUM_IDS = ['wireHole','wireSlot','bulbD','spinLen','spinD','spinBore','pitch','grooveDepth','wireClip','discT','microHole','microSlot','litLen','ledSpacing','bareTop',
   'sphereD','cylD','cylT','ledgeD','cylH','clr','catch','skirt','slots','loopT'];
 function readParams() {
   const p = { mode };
@@ -289,7 +291,12 @@ function derive(p) {
 
   // spiral: a helix of length Lg and pitch P around radius r uses Lg·√((2πr/P)² + 1) of wire.
   // Solve for P so the lit length (less ~15 mm for the turn at the bottom and the run to the clip) fills the spindle.
-  g.Lg = Math.max(0, p.spinLen - 6);                    // groove runs 3 mm above the bottom to 3 mm below the disc
+  // the spiral runs from 3 mm above the bottom up to the bare stem; the clips for the end of the lights sit just above it
+  g.clipH = 7;
+  g.zWindBot = g.zBot + 3;
+  g.zWindTop = g.zEnd - p.bareTop;
+  g.Lg = Math.max(0, g.zWindTop - g.zWindBot);
+  g.overhead = 3 + p.bareTop;                           // spindle length that holds no spiral
   g.rW = p.groove ? g.spinR - p.grooveDepth + 0.3 : g.spinR + 0.3;  // centre line of the wound wire
   g.circ = 2 * Math.PI * g.rW;
   g.pMin = (p.groove ? g.grooveTopW : 1.4) + 0.6;                             // closest the turns can sit and still print as separate grooves
@@ -310,8 +317,8 @@ function derive(p) {
   g.helixLen = wireFor(g.pitch);
   g.capacity = wireFor(g.pMin) + 15;
   // spindle length that would take all the lights at the closest spacing, and one that gives about 2 turns' worth of gentle spiral
-  g.needLenLong = Math.ceil(g.windLen / Math.sqrt((g.circ / g.pMin) ** 2 + 1) + 6);
-  g.needLenShort = Math.ceil(g.windLen / Math.sqrt(1.25) + 6);
+  g.needLenLong = Math.ceil(g.windLen / Math.sqrt((g.circ / g.pMin) ** 2 + 1) + g.overhead);
+  g.needLenShort = Math.ceil(g.windLen / Math.sqrt(1.25) + g.overhead);
   g.nLeds = p.ledSpacing > 0 ? Math.max(1, Math.round(p.litLen / p.ledSpacing)) : 0;
   // cleat on the dome, opposite the wire slot
   g.cleatR = Math.min(g.Ro - 5, 13.5);
@@ -333,7 +340,7 @@ function checks(p, g) {
       const over = Math.round(p.litLen - g.capacity);
       // widest spindle that still leaves room to wind inside the opening, and the width needed at the longest length
       const maxD = Math.floor(g.RcIn * 2 - 4);
-      const LgMax = g.maxSpinLen - 6;
+      const LgMax = g.maxSpinLen - g.overhead;
       const needD = Math.ceil(2 * (g.pMin * Math.sqrt((g.windLen / LgMax) ** 2 - 1) / (2 * Math.PI) + (p.groove ? p.grooveDepth : 0) - 0.3));
       const fix = g.needLenLong <= g.maxSpinLen
         ? `make the spindle about ${g.needLenLong} mm long`
@@ -342,7 +349,10 @@ function checks(p, g) {
           : `use a bigger bauble or shorter lights (the largest spindle here, ${g.maxSpinLen} × ${maxD} mm, holds about ${Math.round((LgMax) * Math.sqrt((2 * Math.PI * (maxD / 2 - (p.groove ? p.grooveDepth : 0) + 0.3) / g.pMin) ** 2 + 1) + 15)} mm)`;
       w.push(`About ${over} mm of the lights won’t fit on the spiral even with the turns as close as they print (${g.pMin.toFixed(1)} mm). To fit them all, ${fix}, or wrap the spare round the cleat.`);
     }
-    if (g.fit === 'short') w.push(`The lights are too short to spiral up this spindle. Shorten the spindle to about ${Math.max(10, g.needLenShort)} mm.`);
+    if (g.fit === 'short') w.push(`The lights are too short to spiral up this spindle. Shorten the spindle to about ${Math.max(25, g.needLenShort)} mm.`);
+    if (g.Lg < 10) w.push(`The bare stem leaves almost no room for the spiral. Make the spindle longer than ${Math.ceil(g.overhead + 10)} mm or the bare stem shorter.`);
+    if (p.bareTop < p.cylH) w.push(`The spiral starts inside the ${p.cylH} mm cylinder, where those lights will be hidden. Make the bare stem at least ${Math.ceil(p.cylH + 3)} mm.`);
+    if (p.bareTop - g.clipH < g.discT + 1) w.push('The bare stem is too short to fit the wire clips. Make it at least ' + Math.ceil(g.clipH + 2) + ' mm.');
     if (g.fit === 'manual' && p.groove && g.helixLen + 15 > p.litLen + 1) w.push(`At this spacing the spiral needs about ${Math.round(g.helixLen + 15)} mm of lit wire, but you have ${p.litLen} mm. The lights will stop part-way up the spindle.`);
     if (g.fit === 'manual' && p.groove && p.litLen > g.helixLen + 35) w.push(`At this spacing the spiral holds about ${Math.round(g.helixLen + 15)} mm, so about ${Math.round(p.litLen - g.helixLen - 15)} mm of your lights will be left over. Tick “Space the spiral to fit my lights”, or wrap the spare round the cleat.`);
   }
@@ -431,7 +441,7 @@ function buildParts(p) {
       const steps = Math.max(8, Math.ceil(g.turns * 72)), K5 = prof.length;
       const vp = new Float32Array((steps + 1) * K5 * 3), tv = [];
       for (let i = 0; i <= steps; i++) {
-        const th = 2 * Math.PI * g.turns * i / steps, z0 = g.zBot + 3 + L * i / steps;
+        const th = 2 * Math.PI * g.turns * i / steps, z0 = g.zWindBot + L * i / steps;
         prof.forEach(([r, a], k) => { const o = (i * K5 + k) * 3; vp[o] = r * Math.cos(th); vp[o + 1] = r * Math.sin(th); vp[o + 2] = z0 + a; });
       }
       for (let i = 0; i < steps; i++) for (let k = 0; k < K5; k++) {
@@ -444,6 +454,16 @@ function buildParts(p) {
     }
     // clip at the bottom: a thin slit up one side of the spindle wall
     spin = K(spin.subtract(K(K(Manifold.cube([p.wireClip, g.spinR + 1, 6])).translate([-p.wireClip / 2, 0, g.zBot - 1]))));
+    // clips for the end of the lights: two thin slits in the bare stem just above the spiral, one where the groove
+    // ends and one opposite. Each has a wider lead-in at the surface so the wire is easy to press in.
+    if (g.Lg > 1) {
+      const aEnd = (360 * g.turns) % 360, z0 = g.zWindTop + 0.5, d = Math.min(2, g.spinR - g.boreR - 1);
+      for (const ang of [aEnd, aEnd + 180]) {
+        const slit = K(K(Manifold.cube([d + 1, p.wireClip, g.clipH])).translate([g.spinR - d, -p.wireClip / 2, z0]));
+        const lead = K(K(Manifold.cube([1.6, p.wireClip + 1, g.clipH])).translate([g.spinR - 0.6, -(p.wireClip + 1) / 2, z0]));
+        spin = K(spin.subtract(K(K(Manifold.union([slit, lead])).rotate([0, 0, ang]))));
+      }
+    }
     // clips under the disc: two thin radial slits inside the bauble opening
     const s0 = g.spinR + 0.8, s1 = Math.min(g.RcIn - 1, g.spinR + 7);
     if (s1 > s0 + 1) {
@@ -608,7 +628,7 @@ function buildContext(p, g) {
         new THREE.Vector3(off * 0.4 + 6, 0, g.zTop + 9), new THREE.Vector3(off * 0.4 + 26, 0, g.zTop + 16)], 0.9, wireMat).mesh);
     });
   } else {
-    // copper wire: in over the cleat, down the hollow centre, out of the bottom, spiralling back up to a clip under the disc
+    // copper wire: in over the cleat, down the hollow centre, out of the bottom, spiralling back up to a clip above the spiral
     const pts = [];
     pts.push(new THREE.Vector3(-g.cleatR - 14, 0, g.zTop + 4));
     pts.push(new THREE.Vector3(-g.cleatR, 0, g.zOut(g.cleatR) + 6));
@@ -618,19 +638,19 @@ function buildContext(p, g) {
     pts.push(new THREE.Vector3(0, 0, g.zBot + 2));
     pts.push(new THREE.Vector3(0, 0, g.zBot - 1.5));
     pts.push(new THREE.Vector3(g.spinR * 0.8, 0, g.zBot - 1.5));
-    // lit part: from the bottom exit, up the spiral (only as far as the lights reach), then to a clip under the disc
+    // lit part: from the bottom exit, up the spiral (only as far as the lights reach), then into a clip slot
     const L = g.Lg, rW = g.rW;
     const reach = Math.min(1, g.windLen / Math.max(1, g.helixLen));
     const turns = g.turns * reach, steps = Math.max(8, Math.ceil(turns * 24));
     const lit = [new THREE.Vector3(g.spinR * 0.8, 0, g.zBot - 1.5)];
     for (let i = 0; i <= steps; i++) {
       const t = i / steps, a = t * turns * Math.PI * 2;
-      lit.push(new THREE.Vector3(Math.cos(a) * rW, Math.sin(a) * rW, g.zBot + 3 + t * L * reach));
+      lit.push(new THREE.Vector3(Math.cos(a) * rW, Math.sin(a) * rW, g.zWindBot + t * L * reach));
     }
     if (reach >= 0.999) {
       const last = lit[lit.length - 1], aEnd = Math.atan2(last.y, last.x);
-      lit.push(new THREE.Vector3(Math.cos(aEnd) * (g.spinR + 3), Math.sin(aEnd) * (g.spinR + 3), g.zEnd - 0.5));
-      lit.push(new THREE.Vector3(0, g.spinR + 3, g.zEnd + 0.5));
+      // up into the clip slot above the end of the spiral
+      lit.push(new THREE.Vector3(Math.cos(aEnd) * (g.spinR - 1), Math.sin(aEnd) * (g.spinR - 1), g.zWindTop + g.clipH * 0.6));
     }
     ctx.add(tube([...pts, ...lit], 0.35, copperMat).mesh);
     // micro LEDs at the real spacing along the lit part, the first one where the wire leaves the bottom
@@ -698,7 +718,7 @@ function rebuild() {
       if (p.autoPitch) pin.value = g.pitch.toFixed(1);
     }
     const items = p.mode === 'micro'
-      ? [['Spindle', `${p.spinLen} × ${p.spinD} mm`], ['Spiral', `${g.turns.toFixed(1)} turns, ${g.pitch.toFixed(1)} mm apart`],
+      ? [['Spindle', `${p.spinLen} × ${p.spinD} mm, spiral ${Math.round(g.Lg)} mm`], ['Spiral', `${g.turns.toFixed(1)} turns, ${g.pitch.toFixed(1)} mm apart`],
          ['Holds', `${Math.round(g.helixLen + 15)} mm of lights`], ['LEDs', `${g.nLeds}`], ['Print', 'cap skirt down, spindle disc down, no supports']]
       : [['Wire hole', `${p.wireHole} mm`], ['Slot', `${p.wireSlot} mm`], ['Print', 'skirt down, no supports']];
     $('readout').replaceChildren(...items.map(([k, v]) => { const s = document.createElement('span'); const b = document.createElement('b'); b.textContent = v; s.append(k + ' ', b); return s; }));
