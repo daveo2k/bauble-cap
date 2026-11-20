@@ -234,17 +234,21 @@ function derive(p) {
   g.holeR = (p.mode === 'micro' ? p.microHole : p.wireHole) / 2;
   g.slotW = p.mode === 'micro' ? p.microSlot : p.wireSlot;
   g.Rtop = 7.5;
-  g.Rceil = Math.min(9, g.Rseat - 0.5);
-  g.zCeil = g.zSeat + (g.Rseat - g.Rceil);
   g.zTop = g.zSeat + 1.5 + (g.Ro - g.Rtop);
+  // inside roof: a 45° cone from the seat ring up towards the wire hole, so it prints with no flat bridge.
+  // It stops 1.6 mm under the top; any flat bit left round the hole is only a short ring.
+  g.zCeil = Math.min(g.zSeat + g.Rseat, g.zTop - 1.6);
+  g.Rceil = g.Rseat - (g.zCeil - g.zSeat);
   g.zOut = (r) => r <= g.Rtop ? g.zTop : g.zSeat + 1.5 + (g.Ro - r);
   // spindle
   g.spinR = p.spinD / 2;
   g.boreR = p.spinBore / 2;
   g.discR = g.Rl - 0.3;
   g.zBot = g.zEnd - p.spinLen;
-  g.grooveW = 1.2;
-  g.grooveR = g.spinR - p.grooveDepth + g.grooveW / 2;  // centre of the groove's round profile
+  // groove profile (print orientation is spindle tip up): 0.8 mm wide at the bottom where the wire sits,
+  // a flat face on the disc side and a 45° face on the tip side, so it prints without overhangs
+  g.grooveW = 0.8;
+  g.grooveTopW = g.grooveW + p.grooveDepth;
   // sphere position (for the preview and checks)
   const R = p.sphereD / 2;
   g.sphR = R;
@@ -257,7 +261,7 @@ function derive(p) {
   g.Lg = Math.max(0, p.spinLen - 6);                    // groove runs 3 mm above the bottom to 3 mm below the disc
   g.rW = p.groove ? g.spinR - p.grooveDepth + 0.3 : g.spinR + 0.3;  // centre line of the wound wire
   g.circ = 2 * Math.PI * g.rW;
-  g.pMin = g.grooveW + 0.8;                             // closest the turns can sit and still print as separate grooves
+  g.pMin = (p.groove ? g.grooveTopW : 1.4) + 0.6;                             // closest the turns can sit and still print as separate grooves
   g.windLen = Math.max(0, p.litLen - 15);
   const wireFor = (P) => g.Lg * Math.sqrt((g.circ / P) ** 2 + 1);
   g.fit = 'manual';
@@ -287,7 +291,7 @@ function checks(p, g) {
   const w = [];
   if (g.Rlip <= g.Rc + 0.3) w.push(`Catch depth is too big: the snap lip would hit the ${p.cylD} mm cylinder. Use less than ${(g.Rl - g.Rc - 0.3).toFixed(1)} mm.`);
   if (p.ledgeD <= p.cylD) w.push('The ledge must be wider than the cylinder, or there is nothing for the cap to clip under.');
-  if (g.holeR > g.Rceil - 1) w.push('The wire hole is too big for the top of the cap.');
+  if (g.holeR > g.Rtop - 1.5) w.push('The wire hole is too big for the top of the cap.');
   if (g.slotW > 2 * g.holeR) w.push('The wire slot is wider than the wire hole.');
   if (p.mode === 'micro') {
     if (g.spinR * 2 > g.RcIn * 2 - 4) w.push(`The spindle (${p.spinD} mm) is too wide to wind wire around inside the ${(g.RcIn * 2).toFixed(1)} mm bauble opening.`);
@@ -357,7 +361,12 @@ function buildParts(p) {
     const t = p.loopT, w = 4;
     const aIn = Math.max(3.5, g.holeR + 1.5);
     const zc = g.zTop + 2;
-    const arch = K(K(K(K(CrossSection.square([t, w])).translate([aIn, -w / 2])).revolve(64, 180)).rotate([90, 0, 0]));
+    // pointed (teardrop) arch: round up to 45°, then straight to a peak, so its underside never overhangs more than 45°
+    const half = (r) => { const q = []; for (let i = 0; i <= 12; i++) { const a = (Math.PI / 4) * i / 12; q.push([r * Math.cos(a), r * Math.sin(a)]); } return q; };
+    const tear = (r) => [...half(r), [0, r * Math.SQRT2], ...half(r).reverse().map(([x, y]) => [-x, y])];
+    const archPoly = [...tear(aIn + t), ...tear(aIn).reverse()];
+    const arch = K(K(K(CrossSection.ofPolygons([archPoly], 'EvenOdd')).extrude(w)).translate([0, 0, -w / 2])).rotate([90, 0, 0]);
+    trash.push(arch);
     const zb = g.zOut(aIn + t) - 1.2;
     const postH = zc - zb + 0.01;
     const postR = K(K(Manifold.cube([t, w, postH])).translate([aIn, -w / 2, zb]));
@@ -365,7 +374,7 @@ function buildParts(p) {
     // the loop spans along Y, clear of the wire slot (+X) and the cleat (-X)
     const bail = K(K(Manifold.union([K(arch.translate([0, 0, zc])), postR, postL])).rotate([0, 0, 90]));
     cap = K(cap.add(bail));
-    top = Math.max(top, zc + aIn + t);
+    top = Math.max(top, zc + (aIn + t) * Math.SQRT2);
   }
 
   const parts = [];
@@ -384,8 +393,22 @@ function buildParts(p) {
     spin = K(spin.subtract(K(K(Manifold.cylinder(ch + 0.01, g.boreR + ch, g.boreR, 48)).translate([0, 0, g.zBot - 0.01]))));
     if (p.groove && g.Lg > 1) {
       const L = g.Lg;
-      const prof2 = K(K(CrossSection.circle(g.grooveW / 2, 16)).translate([g.grooveR, 0]));
-      const helix = K(K(Manifold.extrude(prof2, L, Math.max(8, Math.ceil(g.turns * 24)), 360 * g.turns)).translate([0, 0, g.zBot + 3]));
+      // Sweep the groove's cross-section (in the plane through the axis) straight along the helix as a mesh.
+      // Disc side: a straight face. Tip side (up when printed): a 45° face, so nothing overhangs.
+      const rb = g.spinR - p.grooveDepth, rOut = g.spinR + 0.5, hw = g.grooveW / 2;
+      const prof = [[rb, hw], [rb, -hw], [g.spinR, -hw - p.grooveDepth], [rOut, -hw - p.grooveDepth], [rOut, hw]];
+      const steps = Math.max(8, Math.ceil(g.turns * 72)), K5 = prof.length;
+      const vp = new Float32Array((steps + 1) * K5 * 3), tv = [];
+      for (let i = 0; i <= steps; i++) {
+        const th = 2 * Math.PI * g.turns * i / steps, z0 = g.zBot + 3 + L * i / steps;
+        prof.forEach(([r, a], k) => { const o = (i * K5 + k) * 3; vp[o] = r * Math.cos(th); vp[o + 1] = r * Math.sin(th); vp[o + 2] = z0 + a; });
+      }
+      for (let i = 0; i < steps; i++) for (let k = 0; k < K5; k++) {
+        const a0 = i * K5 + k, a1 = i * K5 + (k + 1) % K5, b0 = a0 + K5, b1 = a1 + K5;
+        tv.push(a0, b0, a1, a1, b0, b1);
+      }
+      for (let k = 1; k < K5 - 1; k++) { tv.push(0, k, k + 1); const e = steps * K5; tv.push(e, e + k + 1, e + k); }
+      const helix = K(new Manifold(new wasm.Mesh({ numProp: 3, vertProperties: vp, triVerts: new Uint32Array(tv) })));
       spin = K(spin.subtract(helix));
     }
     // clip at the bottom: a thin slit up one side of the spindle wall

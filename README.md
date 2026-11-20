@@ -9,6 +9,8 @@ Two cap styles:
 
 Both styles have flex slots and a catch that snap over the bauble's ledge, and an optional hanging loop.
 
+Everything prints without supports: the cap skirt down, the spindle disc down. The roof inside the cap is a 45° cone rather than a flat bridge, the hanging loop has a pointed top, and the spiral groove has a flat floor with a 45° face on the side that faces up when printed.
+
 Everything runs in the browser. The page loads three.js and the Manifold geometry engine's script from cdn.jsdelivr.net, so the browser needs internet access. The Manifold WASM is embedded in `index.html`.
 
 ## Run with Docker
