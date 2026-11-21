@@ -152,6 +152,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
           <div class="row"><label for="spinBore">Hollow centre diameter</label><div class="field"><input id="spinBore" type="number" step="0.5" min="1.5" value="4"><span>mm</span></div></div>
           <div class="row"><label for="bareTop">Bare stem under the disc</label><div class="field"><input id="bareTop" type="number" step="1" min="8" value="18"><span>mm</span></div></div>
           <p class="hint">The top of the spindle sits inside the bauble's cylinder, where lights would be hidden. The spiral starts below it. Make this about the cylinder height plus 3 mm. Two clip slots, one each side, hold the end of the lights where the spiral finishes.</p>
+          <label class="check"><input id="collar" type="checkbox" checked> Slide-on clip collar for the end of the lights</label>
+          <div class="row"><label for="collarClr">Collar grip clearance</label><div class="field"><input id="collarClr" type="number" step="0.05" min="0" value="0.15"><span>mm</span></div></div>
+          <p class="hint">Slide the collar onto the bare stem from the bottom before you wind the lights. Once they're wound, lay the end of the wire up the stem and push the collar down over it. It pinches the wire against the stem. Add a drop of glue if you want it permanent. If it's loose, lower the clearance.</p>
           <label class="check"><input id="groove" type="checkbox" checked> Spiral groove for the wire</label>
           <label class="check"><input id="autoPitch" type="checkbox" checked> Space the spiral to fit my lights</label>
           <p class="hint">The plain lead from the battery box runs down the hollow centre. The lit part, from the first LED to the last, winds up the outside, spread evenly from the bottom of the spindle to the top.</p>
@@ -237,7 +240,7 @@ let wasm = null;
 let current = null;
 
 // ---------- settings ----------
-const NUM_IDS = ['wireHole','wireSlot','bulbD','spinLen','spinD','spinBore','pitch','grooveDepth','wireClip','discT','microHole','microSlot','litLen','ledSpacing','bareTop',
+const NUM_IDS = ['wireHole','wireSlot','bulbD','spinLen','spinD','spinBore','pitch','grooveDepth','wireClip','discT','microHole','microSlot','litLen','ledSpacing','bareTop','collarClr',
   'sphereD','cylD','cylT','ledgeD','cylH','clr','catch','skirt','slots','loopT'];
 function readParams() {
   const p = { mode };
@@ -247,6 +250,7 @@ function readParams() {
   p.cleat = $('cleat').checked;
   p.groove = $('groove').checked;
   p.autoPitch = $('autoPitch').checked;
+  p.collar = $('collar').checked;
   p.slots = Math.max(0, Math.round(p.slots));
   return p;
 }
@@ -293,6 +297,7 @@ function derive(p) {
   // Solve for P so the lit length (less ~15 mm for the turn at the bottom and the run to the clip) fills the spindle.
   // the spiral runs from 3 mm above the bottom up to the bare stem; the clips for the end of the lights sit just above it
   g.clipH = 7;
+  g.collarH = 6;
   g.zWindBot = g.zBot + 3;
   g.zWindTop = g.zEnd - p.bareTop;
   g.Lg = Math.max(0, g.zWindTop - g.zWindBot);
@@ -352,6 +357,7 @@ function checks(p, g) {
     if (g.fit === 'short') w.push(`The lights are too short to spiral up this spindle. Shorten the spindle to about ${Math.max(25, g.needLenShort)} mm.`);
     if (g.Lg < 10) w.push(`The bare stem leaves almost no room for the spiral. Make the spindle longer than ${Math.ceil(g.overhead + 10)} mm or the bare stem shorter.`);
     if (p.bareTop < p.cylH) w.push(`The spiral starts inside the ${p.cylH} mm cylinder, where those lights will be hidden. Make the bare stem at least ${Math.ceil(p.cylH + 3)} mm.`);
+    if (p.collar && p.collarClr > 0.4) w.push('A collar clearance this big won’t pinch fine wire. Try 0.1–0.25 mm.');
     if (p.bareTop - g.clipH < g.discT + 1) w.push('The bare stem is too short to fit the wire clips. Make it at least ' + Math.ceil(g.clipH + 2) + ' mm.');
     if (g.fit === 'manual' && p.groove && g.helixLen + 15 > p.litLen + 1) w.push(`At this spacing the spiral needs about ${Math.round(g.helixLen + 15)} mm of lit wire, but you have ${p.litLen} mm. The lights will stop part-way up the spindle.`);
     if (g.fit === 'manual' && p.groove && p.litLen > g.helixLen + 35) w.push(`At this spacing the spiral holds about ${Math.round(g.helixLen + 15)} mm, so about ${Math.round(p.litLen - g.helixLen - 15)} mm of your lights will be left over. Tick “Space the spiral to fit my lights”, or wrap the spare round the cleat.`);
@@ -477,6 +483,19 @@ function buildParts(p) {
     const sPrint = K(K(spin.rotate([180, 0, 0])).translate([0, 0, g.zEnd + g.discT]));
     parts.push({ key: 'spindle', name: `spindle-${Math.round(p.spinLen)}mm`, view: sShaded.getMesh(3), print: sPrint.getMesh(),
       size: [2 * g.discR, 2 * g.discR, g.zEnd + g.discT - g.zBot] });
+
+    // slide-on clip collar: a C-shaped ring that pinches the end of the wire against the bare stem.
+    // Chamfered inside at both ends so it slides on and rides over the wire. Prints flat, no supports.
+    if (p.collar) {
+      const H = g.collarH, ri = g.spinR + p.collarClr, ro = ri + 1.6, c = 0.5;
+      const cprof = [[ri + c, 0], [ro, 0], [ro, H], [ri + c, H], [ri, H - c], [ri, c]];
+      let col = K(K(CrossSection.ofPolygons([cprof], 'EvenOdd')).revolve(SEG));
+      col = K(col.subtract(K(K(Manifold.cube([ro - ri + 2, 1.2, H + 2])).translate([ri - 1, -0.6, -1]))));
+      // in the preview it sits just above the end of the spiral, its gap turned away from the wire
+      const aEnd = (360 * g.turns) % 360;
+      const colView = K(K(K(col.rotate([0, 0, aEnd + 180])).translate([0, 0, g.zWindTop + 1])).calculateNormals(3, 40));
+      parts.push({ key: 'collar', name: `collar-${p.spinD}mm`, view: colView.getMesh(3), print: col.getMesh(), size: [2 * ro, 2 * ro, H] });
+    }
   }
 
   for (const m of trash) { try { m.delete(); } catch (e) {} }
@@ -554,12 +573,13 @@ const FINISH = {
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
 const capMat = new THREE.MeshStandardMaterial({ ...FINISH.gold, side: THREE.DoubleSide });
 const spindleMat = new THREE.MeshStandardMaterial({ color: 0x8a949b, roughness: 0.55, side: THREE.DoubleSide });
+const collarMat = new THREE.MeshStandardMaterial({ color: 0xd99a3c, roughness: 0.5, side: THREE.DoubleSide });
 const ghostMat = new THREE.MeshStandardMaterial({ color: 0xeef0f0, transparent: true, opacity: 0.22, roughness: 0.3, depthWrite: false, side: THREE.DoubleSide });
 const neckMat = new THREE.MeshStandardMaterial({ color: 0xf4f4ef, transparent: true, opacity: 0.55, roughness: 0.6, side: THREE.DoubleSide });
 const lightMat = new THREE.MeshStandardMaterial({ color: 0xfff1c9, emissive: 0xffc25a, emissiveIntensity: 1.0, transparent: true, opacity: 0.95 });
 const wireMat = new THREE.MeshStandardMaterial({ color: 0x2f5d3a, roughness: 0.6 });
 const copperMat = new THREE.MeshStandardMaterial({ color: 0xc27a3e, metalness: 0.7, roughness: 0.35 });
-const ALL_MATS = [capMat, spindleMat, ghostMat, neckMat, lightMat, wireMat, copperMat];
+const ALL_MATS = [capMat, spindleMat, collarMat, ghostMat, neckMat, lightMat, wireMat, copperMat];
 
 const partGroup = new THREE.Group(); scene.add(partGroup);
 const ctx = new THREE.Group(); scene.add(ctx);
@@ -681,7 +701,7 @@ function meshToGeometry(mesh) {
 }
 function showParts(parts) {
   for (const c of [...partGroup.children]) { c.geometry.dispose(); partGroup.remove(c); }
-  for (const part of parts) partGroup.add(new THREE.Mesh(meshToGeometry(part.view), part.key === 'cap' ? capMat : spindleMat));
+  for (const part of parts) partGroup.add(new THREE.Mesh(meshToGeometry(part.view), part.key === 'cap' ? capMat : part.key === 'collar' ? collarMat : spindleMat));
 }
 
 function applyCut() {
@@ -710,7 +730,7 @@ function rebuild() {
     const fmt = (s) => `${s[0].toFixed(1)} × ${s[1].toFixed(1)} × ${s[2].toFixed(1)} mm`;
     $('parts').replaceChildren(...res.parts.map((pt) => {
       const li = document.createElement('li'); const b = document.createElement('b');
-      b.textContent = pt.key === 'cap' ? 'Cap' : 'Spindle'; li.append(b, ` ${fmt(pt.size)}`); return li;
+      b.textContent = { cap: 'Cap', spindle: 'Spindle', collar: 'Collar' }[pt.key]; li.append(b, ` ${fmt(pt.size)}`); return li;
     }));
     if (p.mode === 'micro') {
       const pin = $('pitch');
@@ -719,7 +739,7 @@ function rebuild() {
     }
     const items = p.mode === 'micro'
       ? [['Spindle', `${p.spinLen} × ${p.spinD} mm, spiral ${Math.round(g.Lg)} mm`], ['Spiral', `${g.turns.toFixed(1)} turns, ${g.pitch.toFixed(1)} mm apart`],
-         ['Holds', `${Math.round(g.helixLen + 15)} mm of lights`], ['LEDs', `${g.nLeds}`], ['Print', 'cap skirt down, spindle disc down, no supports']]
+         ['Holds', `${Math.round(g.helixLen + 15)} mm of lights`], ['LEDs', `${g.nLeds}`], ['Print', `cap skirt down, spindle disc down${p.collar ? ', collar flat' : ''}, no supports`]]
       : [['Wire hole', `${p.wireHole} mm`], ['Slot', `${p.wireSlot} mm`], ['Print', 'skirt down, no supports']];
     $('readout').replaceChildren(...items.map(([k, v]) => { const s = document.createElement('span'); const b = document.createElement('b'); b.textContent = v; s.append(k + ' ', b); return s; }));
     $('download').disabled = false;
