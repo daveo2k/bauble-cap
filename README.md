@@ -5,7 +5,7 @@ A browser configurator for a snap-on cap that fits the cylinder ledge of a litho
 Two cap styles:
 
 - **String lights**: a cap with a centre hole and side slot to feed 2–3 bulbs from a tree light string down into the bauble.
-- **Micro lights** (LEDs on fine copper wire): a hollow spindle hangs from the cap. The wire runs down the middle and winds back up a spiral groove. The spiral starts below the bauble's cylinder (a bare stem you can set, 18 mm by default), so no lights are hidden in the neck, and two clip slots, one each side, hold the end of the lights where it finishes. An optional slide-on clip collar (a separate C-shaped ring) pinches the end of the wire against the stem, and can be glued if you want it permanent. There's also a cable cleat on top. Enter the lit length and LED spacing and the spiral spacing is worked out to fit.
+- **Micro lights** (LEDs on fine copper wire): a hollow spindle hangs from the cap. The wire runs down the middle and winds back up a spiral groove. The spiral starts below the bauble's cylinder (a bare stem you can set, 18 mm by default), so no lights are hidden in the neck, and two clip slots, one each side, hold the end of the lights where it finishes. An optional snap-on clip (a separate C-shaped part with a third of the ring cut away) pushes onto the stem from the side over the end of the wire, and can be glued if you want it permanent. There's also a cable cleat on top. Enter the lit length and LED spacing and the spiral spacing is worked out to fit.
 
 Both styles have flex slots and a catch that snap over the bauble's ledge, and an optional hanging loop.
 

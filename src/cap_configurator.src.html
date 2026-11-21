@@ -152,9 +152,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
           <div class="row"><label for="spinBore">Hollow centre diameter</label><div class="field"><input id="spinBore" type="number" step="0.5" min="1.5" value="4"><span>mm</span></div></div>
           <div class="row"><label for="bareTop">Bare stem under the disc</label><div class="field"><input id="bareTop" type="number" step="1" min="8" value="18"><span>mm</span></div></div>
           <p class="hint">The top of the spindle sits inside the bauble's cylinder, where lights would be hidden. The spiral starts below it. Make this about the cylinder height plus 3 mm. Two clip slots, one each side, hold the end of the lights where the spiral finishes.</p>
-          <label class="check"><input id="collar" type="checkbox" checked> Slide-on clip collar for the end of the lights</label>
+          <label class="check"><input id="collar" type="checkbox" checked> Snap-on clip collar for the end of the lights</label>
           <div class="row"><label for="collarClr">Collar grip clearance</label><div class="field"><input id="collarClr" type="number" step="0.05" min="0" value="0.15"><span>mm</span></div></div>
-          <p class="hint">Slide the collar onto the bare stem from the bottom before you wind the lights. Once they're wound, lay the end of the wire up the stem and push the collar down over it. It pinches the wire against the stem. Add a drop of glue if you want it permanent. If it's loose, lower the clearance.</p>
+          <p class="hint">Once the lights are wound, lay the end of the wire up the bare stem and push the clip onto the stem from the side, over the wire. It pinches the wire against the stem. Add a drop of glue if you want it permanent. If it's loose, lower the clearance.</p>
           <label class="check"><input id="groove" type="checkbox" checked> Spiral groove for the wire</label>
           <label class="check"><input id="autoPitch" type="checkbox" checked> Space the spiral to fit my lights</label>
           <p class="hint">The plain lead from the battery box runs down the hollow centre. The lit part, from the first LED to the last, winds up the outside, spread evenly from the bottom of the spindle to the top.</p>
@@ -298,6 +298,8 @@ function derive(p) {
   // the spiral runs from 3 mm above the bottom up to the bare stem; the clips for the end of the lights sit just above it
   g.clipH = 7;
   g.collarH = 6;
+  g.collarWall = 1.6;
+  g.collarOpen = 120;              // degrees cut out of the ring: the clip snaps on through a gap 0.87 × the stem width
   g.zWindBot = g.zBot + 3;
   g.zWindTop = g.zEnd - p.bareTop;
   g.Lg = Math.max(0, g.zWindTop - g.zWindBot);
@@ -484,13 +486,19 @@ function buildParts(p) {
     parts.push({ key: 'spindle', name: `spindle-${Math.round(p.spinLen)}mm`, view: sShaded.getMesh(3), print: sPrint.getMesh(),
       size: [2 * g.discR, 2 * g.discR, g.zEnd + g.discT - g.zBot] });
 
-    // slide-on clip collar: a C-shaped ring that pinches the end of the wire against the bare stem.
-    // Chamfered inside at both ends so it slides on and rides over the wire. Prints flat, no supports.
+    // snap-on clip collar: a C-shaped clip with a third of the ring cut away, so it snaps onto the bare stem from the
+    // side and pinches the end of the wire against it. The tips have 45° lead-ins that spread it as you push it on.
+    // Drawn as a flat C and extruded, so it prints flat with no supports.
     if (p.collar) {
-      const H = g.collarH, ri = g.spinR + p.collarClr, ro = ri + 1.6, c = 0.5;
-      const cprof = [[ri + c, 0], [ro, 0], [ro, H], [ri + c, H], [ri, H - c], [ri, c]];
-      let col = K(K(CrossSection.ofPolygons([cprof], 'EvenOdd')).revolve(SEG));
-      col = K(col.subtract(K(K(Manifold.cube([ro - ri + 2, 1.2, H + 2])).translate([ri - 1, -0.6, -1]))));
+      const H = g.collarH, ri = g.spinR + p.collarClr, ro = ri + g.collarWall, c = 0.8;
+      const half = (g.collarOpen / 2) * Math.PI / 180, a0 = half, a1 = 2 * Math.PI - half, n = 96;
+      const P = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
+      const ring = [];
+      for (let i = 0; i <= n; i++) ring.push(P(ro, a0 + (a1 - a0) * i / n));          // outside, round the back
+      ring.push(P(ri + c, a1));                                                       // lead-in at one tip
+      for (let i = 0; i <= n; i++) ring.push(P(ri, a1 - c / ri - (a1 - a0 - 2 * c / ri) * i / n)); // inside, back again
+      ring.push(P(ri + c, a0));                                                       // lead-in at the other tip
+      const col = K(K(CrossSection.ofPolygons([ring], 'EvenOdd')).extrude(H));
       // in the preview it sits just above the end of the spiral, its gap turned away from the wire
       const aEnd = (360 * g.turns) % 360;
       const colView = K(K(K(col.rotate([0, 0, aEnd + 180])).translate([0, 0, g.zWindTop + 1])).calculateNormals(3, 40));
