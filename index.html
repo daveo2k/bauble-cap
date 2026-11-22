@@ -1,3 +1,7 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bauble Cap Maker · BadgerTech</title>
 <link rel="manifest" href="site.webmanifest">
 <link rel="icon" type="image/svg+xml" href="brand/badgertech-mark-small.svg">
@@ -797,6 +801,15 @@ $('download').addEventListener('click', async () => {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   $('status').textContent = `Saved ${zipName}. Unzip it to get the STL files.`;
 });
+
+// Sizes passed in the address, e.g. from Lithophane Studio: #sphereD=100&cylD=36&cylT=3&ledgeD=40&cylH=15
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const id of ['sphereD', 'cylD', 'cylT', 'ledgeD', 'cylH']) {
+    const v = parseFloat(h.get(id));
+    if (h.has(id) && Number.isFinite(v) && v > 0) $(id).value = v;
+  }
+})();
 
 renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
 applyCut();
