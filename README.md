@@ -1,5 +1,7 @@
 # Bauble Cap Maker
 
+> **This repository has moved.** The tool now lives in the `cap/` folder of [lithophane-studio](https://github.com/daveo2k/lithophane-studio), with this repository's history, and is served at `/cap/` alongside the studio. Make changes there; this repository is kept read-only for reference.
+
 A browser configurator for a snap-on cap that fits the cylinder ledge of a lithophane sphere bauble (Classic LithophaneMaker Globe). Set the sizes, check the 3D preview, and download the STL files as a zip.
 
 Two cap styles:
